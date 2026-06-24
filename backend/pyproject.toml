@@ -1,0 +1,23 @@
+[project]
+name = "food-delivery-backend"
+version = "0.1.0"
+description = "Food Delivery Platform Backend"
+requires-python = ">=3.11"
+dependencies = [
+    "django>=5.0,<6.0",
+    "djangorestframework>=3.15,<4.0",
+    "django-cors-headers>=4.0",
+    "djangorestframework-simplejwt>=5.0",
+    "channels>=4.0",
+    "django-filter>=24.0",
+    "celery>=5.3",
+    "redis>=5.0",
+    "psycopg2-binary>=2.9",
+    "gunicorn>=22.0",
+    "daphne>=4.0",
+    "drf-spectacular>=0.27",
+    "python-dotenv>=1.0",
+]
+
+[tool.django]
+settings = "config.settings"
