@@ -1,4 +1,4 @@
-from django.db import models
+from django.contrib.gis.db import models
 from accounts.models import User
 
 
@@ -12,8 +12,9 @@ class Restaurant(models.Model):
     )
     name = models.CharField(max_length=255)
     address = models.TextField(blank=True)
-    lat = models.FloatField(blank=True, null=True)
-    lng = models.FloatField(blank=True, null=True)
+    location = models.PointField(geography=True, blank=True, null=True)
+    # lat = models.FloatField(blank=True, null=True)
+    # lng = models.FloatField(blank=True, null=True)
     image = models.ImageField(upload_to="restaurants/", blank=True)
     status = models.CharField(
         max_length=10, choices=Status.choices, default=Status.OPEN

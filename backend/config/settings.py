@@ -25,9 +25,9 @@ INSTALLED_APPS = [
     "channels",
     "drf_spectacular",
     # Local apps
-    # "accounts",
-    # "restaurants",
-    # "orders",
+    "accounts",
+    "restaurants",
+    "orders",
     # "payments",
     # "chat",
     # "delivery",
@@ -72,7 +72,7 @@ DATABASES = {
         "NAME": os.environ.get("DB_NAME", "food_delivery"),
         "USER": os.environ.get("DB_USER", "food_user"),
         "PASSWORD": os.environ.get("DB_PASSWORD", "food_pass"),
-        "HOST": os.environ.get("DB_HOST", "db"),
+        "HOST": os.environ.get("DB_HOST", "localhost"),
         "PORT": os.environ.get("DB_PORT", "5432"),
     }
 }
@@ -106,7 +106,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# AUTH_USER_MODEL = "accounts.User"
+AUTH_USER_MODEL = "accounts.User"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (

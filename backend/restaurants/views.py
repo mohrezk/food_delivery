@@ -1,135 +1,97 @@
-# from rest_framework import generics, permissions, status
-# from rest_framework.parsers import MultiPartParser, FormParser
-# from rest_framework.response import Response
-# from django.db.models import Q
-# from .models import Restaurant, Category, MenuItem
-# from .serializers import (
-#     RestaurantSerializer,
-#     RestaurantDetailSerializer,
-#     CategorySerializer,
-#     MenuItemSerializer,
-#     MenuItemWriteSerializer,
-# )
-# from accounts.permissions import IsVendor
+from rest_framework import viewsets
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import AllowAny
+
+from django.contrib.gis.db.models.functions import Distance
+from django.contrib.gis.geos import Point
+from django.contrib.gis.measure import D
+
+from .models import Restaurant, MenuItem
+from .serializers import (
+    RestaurantSerializer,
+    RestaurantDetailSerializer,
+    MenuItemSerializer,
+    MenuItemWriteSerializer,
+)
+
+from accounts.permissions import IsRestaurantOwner, IsVendor, IsMenuItemOwner
 
 
-# from rest_framework import generics, permissions, status
-# from rest_framework import viewsets
-# from rest_framework.parsers import MultiPartParser, FormParser
-# from rest_framework.response import Response
-# from .models import Restaurant, Category, MenuItem
-# from .serializers import (
-#     RestaurantSerializer,
-#     RestaurantDetailSerializer,
-#     CategorySerializer,
-#     MenuItemSerializer,
-#     MenuItemWriteSerializer,
-# )
-# from accounts.permissions import IsVendor
+class RestaurantViewSet(viewsets.ModelViewSet):
+
+    def get_queryset(self):
+        queryset = Restaurant.objects.all()
+
+        if self.action == "retrieve":
+            queryset = queryset.prefetch_related("menu_items")
+
+        lat = self.request.query_params.get("lat")
+        lng = self.request.query_params.get("lng")
+        radius_km = self.request.query_params.get("radius", 5)
+
+        if lat and lng:
+            try:
+                user_location = Point(float(lng), float(lat), srid=4326)
+
+                queryset = queryset.filter(
+                    location__distance_lte=(user_location, D(km=radius_km))
+                ).annotate(
+                    distance=Distance("location", user_location)
+                ).order_by("distance")
+            except (ValueError, TypeError):
+                pass
+
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == "retrieve":
+            return RestaurantDetailSerializer
+
+        return RestaurantSerializer
+
+    def get_permissions(self):
+        if self.action in (
+            "update",
+            "partial_update",
+            "destroy",
+        ):
+            return [IsRestaurantOwner()]
+        elif self.action == "create":
+            return [IsVendor()]
+        return [AllowAny()]
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
 
 
-# class VendorRestaurantView(generics.GenericAPIView):
-#     serializer_class = RestaurantSerializer
-#     permission_classes = (permissions.IsAuthenticated, IsVendor)
-#     parser_classes = (MultiPartParser, FormParser)
+class MenuItemViewSet(viewsets.ModelViewSet):
 
-#     def get_object(self):
-#         return Restaurant.objects.filter(owner=self.request.user).first()
+    def get_queryset(self):
+        return MenuItem.objects.select_related("restaurant")
 
-#     def get(self, request, *args, **kwargs):
-#         restaurant = self.get_object()
-#         if not restaurant:
-#             return Response(
-#                 {"detail": "No restaurant found. Create one via POST."}, status=404
-#             )
-#         serializer = self.get_serializer(restaurant)
-#         return Response(serializer.data)
+    def perform_create(self, serializer):
+        restaurant = serializer.validated_data["restaurant"]
 
-#     def post(self, request, *args, **kwargs):
-#         if self.get_object():
-#             return Response({"detail": "Restaurant already exists."}, status=409)
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         serializer.save(owner=request.user)
-#         return Response(serializer.data, status=201)
+        if restaurant.owner != self.request.user:
+            raise PermissionDenied("You don't own this restaurant.")
 
-#     def patch(self, request, *args, **kwargs):
-#         restaurant = self.get_object()
-#         if not restaurant:
-#             return Response({"detail": "No restaurant found."}, status=404)
-#         serializer = self.get_serializer(restaurant, data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         serializer.save()
-#         return Response(serializer.data)
+        serializer.save()
 
+    def get_serializer_class(self):
+        if self.action in ("create", "update", "partial_update"):
+            return MenuItemWriteSerializer
 
-# class VendorMenuListView(generics.ListCreateAPIView):
-#     serializer_class = MenuItemWriteSerializer
-#     permission_classes = (permissions.IsAuthenticated, IsVendor)
-#     parser_classes = (MultiPartParser, FormParser)
+        return MenuItemSerializer
 
-#     def get_queryset(self):
-#         return MenuItem.objects.filter(restaurant__owner=self.request.user)
+    def get_permissions(self):
+        if self.action == "create":
+            return [IsVendor()]
 
-#     def perform_create(self, serializer):
-#         restaurant = Restaurant.objects.get(owner=self.request.user)
-#         serializer.save(restaurant=restaurant)
+        if self.action in (
+            "update",
+            "partial_update",
+            "destroy",
+        ):
+            return [IsMenuItemOwner()]
 
-
-# class VendorMenuDetailView(generics.RetrieveUpdateDestroyAPIView):
-#     serializer_class = MenuItemWriteSerializer
-#     permission_classes = (permissions.IsAuthenticated, IsVendor)
-#     parser_classes = (MultiPartParser, FormParser)
-
-#     def get_queryset(self):
-#         return MenuItem.objects.filter(restaurant__owner=self.request.user)
-
-
-# class VendorCategoryListView(generics.ListCreateAPIView):
-#     serializer_class = CategorySerializer
-#     permission_classes = (permissions.IsAuthenticated, IsVendor)
-
-#     def get_queryset(self):
-#         return Category.objects.filter(restaurant__owner=self.request.user)
-
-#     def perform_create(self, serializer):
-#         restaurant = Restaurant.objects.get(owner=self.request.user)
-#         serializer.save(restaurant=restaurant)
-
-
-# class RestaurantListView(generics.ListAPIView):
-#     serializer_class = RestaurantSerializer
-#     permission_classes = (permissions.AllowAny,)
-
-#     def get_queryset(self):
-#         qs = Restaurant.objects.filter(status=Restaurant.Status.OPEN)
-#         lat = self.request.query_params.get("lat")
-#         lng = self.request.query_params.get("lng")
-#         radius = self.request.query_params.get("radius")
-#         if lat and lng and radius:
-#             try:
-#                 lat, lng, radius = float(lat), float(lng), float(radius)
-#                 qs = qs.filter(lat__isnull=False, lng__isnull=False)
-#                 ids = []
-#                 for r in qs:
-#                     from math import radians, sin, cos, sqrt, asin
-
-#                     dlat = radians(r.lat - lat)
-#                     dlng = radians(r.lng - lng)
-#                     a = (
-#                         sin(dlat / 2) ** 2
-#                         + cos(radians(lat)) * cos(radians(r.lat)) * sin(dlng / 2) ** 2
-#                     )
-#                     c = 2 * asin(sqrt(a))
-#                     if 6371 * c <= radius:
-#                         ids.append(r.id)
-#                 qs = qs.filter(id__in=ids)
-#             except ValueError:
-#                 pass
-#         return qs
-
-
-# class RestaurantDetailView(generics.RetrieveAPIView):
-#     queryset = Restaurant.objects.all()
-#     serializer_class = RestaurantDetailSerializer
-#     permission_classes = (permissions.AllowAny,)
+        return [AllowAny()]
