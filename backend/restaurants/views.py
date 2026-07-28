@@ -20,7 +20,7 @@ from accounts.permissions import IsRestaurantOwner, IsVendor, IsMenuItemOwner
 class RestaurantViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
-        queryset = Restaurant.objects.all()
+        queryset = Restaurant.objects.all().order_by("-created_at")
 
         if self.action == "retrieve":
             queryset = queryset.prefetch_related("menu_items")

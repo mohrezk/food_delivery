@@ -1,68 +1,197 @@
-from rest_framework import viewsets
+from decimal import Decimal
+
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
+from django.shortcuts import get_object_or_404
+from rest_framework import status, viewsets
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from restaurants.models import MenuItem
 
 from .models import Cart, CartItem, Order, OrderItem
-
 from .serializers import (
-    CartSerializer,
     CartItemSerializer,
+    CartSerializer,
+    CheckoutSerializer,
     OrderSerializer,
-    OrderItemSerializer,
 )
 
 
-class CartViewSet(viewsets.ModelViewSet):
-    serializer_class = CartSerializer
-    permission_classes = [IsAuthenticated]
+class CartView(APIView):
+    permission_classes = (IsAuthenticated,)
 
-    def get_queryset(self):
-        return Cart.objects.filter(user=self.request.user).prefetch_related(
-            "items",
-            "items__menu_item",
-        )
+    def _get_or_create_cart(self):
+        cart, _ = Cart.objects.get_or_create(user=self.request.user)
+        return cart
 
-    def perform_create(self, serializer):
-        serializer.save(
-            user=self.request.user,
-        )
+    def get(self, request):
+        cart = self._get_or_create_cart()
+        serializer = CartSerializer(cart)
+        return Response(serializer.data)
 
 
 class CartItemViewSet(viewsets.ModelViewSet):
     serializer_class = CartItemSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = (IsAuthenticated,)
 
     def get_queryset(self):
         return CartItem.objects.select_related(
             "cart",
             "menu_item",
-        ).filter(
-            cart__user=self.request.user,
+            "cart__user",
+        ).filter(cart__user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        menu_item_id = request.data.get("menu_item")
+        quantity = int(request.data.get("quantity", 1))
+
+        if quantity < 1:
+            raise ValidationError({"quantity": "Must be >= 1."})
+
+        try:
+            menu_item = MenuItem.objects.get(pk=menu_item_id)
+        except (MenuItem.DoesNotExist, ValueError, TypeError):
+            raise ValidationError({"menu_item": "Invalid menu item."})
+
+        if not menu_item.is_available:
+            raise ValidationError({"menu_item": "Item not available."})
+
+        existing = CartItem.objects.filter(cart=cart, menu_item=menu_item).first()
+        if existing:
+            existing.quantity += quantity
+            existing.price_snapshot = menu_item.price
+            existing.save()
+            item, created = existing, False
+        else:
+            item = CartItem.objects.create(
+                cart=cart,
+                menu_item=menu_item,
+                quantity=quantity,
+                price_snapshot=menu_item.price,
+            )
+            created = True
+
+        serializer = self.get_serializer(item)
+        return Response(
+            serializer.data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
-    def perform_create(self, serializer):
-        cart = serializer.validated_data["cart"]
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
 
-        if cart.user != self.request.user:
-            raise PermissionError("You cannot add items to another user's cart.")
+        new_qty = serializer.validated_data.get("quantity")
+        if new_qty is not None and new_qty < 1:
+            raise ValidationError({"quantity": "Must be >= 1."})
 
-        serializer.save(price_snapshot=serializer.validated_data["menu_item"].price)
+        for attr, value in serializer.validated_data.items():
+            setattr(instance, attr, value)
+        if "menu_item" in serializer.validated_data:
+            instance.price_snapshot = serializer.validated_data["menu_item"].price
+        instance.save()
+        return Response(self.get_serializer(instance).data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class OrderViewSet(viewsets.ModelViewSet):
+class CheckoutView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = CheckoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        restaurant = data["restaurant"]
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+
+        cart_items = list(cart.items.select_related("menu_item"))
+        if not cart_items:
+            raise ValidationError({"cart": "Cart is empty."})
+
+        cross_restaurant = [
+            ci.menu_item.restaurant_id
+            for ci in cart_items
+            if ci.menu_item.restaurant_id != restaurant.id
+        ]
+        if cross_restaurant:
+            raise ValidationError(
+                {"cart": "All cart items must belong to the selected restaurant."}
+            )
+
+        order = Order.objects.create(
+            user=request.user,
+            restaurant=restaurant,
+            delivery_address=data["delivery_address"],
+            delivery_location=data.get("delivery_location"),
+            status=Order.Status.PENDING,
+        )
+
+        total = Decimal(0)
+        for ci in cart_items:
+            line_total = ci.price_snapshot * ci.quantity
+            total += line_total
+            OrderItem.objects.create(
+                order=order,
+                menu_item=ci.menu_item,
+                quantity=ci.quantity,
+                price_snapshot=ci.price_snapshot,
+            )
+
+        order.total_price = total
+        order.save(update_fields=["total_price"])
+
+        cart.items.all().delete()
+
+        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+
+class OrderViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = OrderSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = (IsAuthenticated,)
 
     def get_queryset(self):
         return (
             Order.objects.filter(user=self.request.user)
-            .select_related(
-                "restaurant",
-            )
-            .prefetch_related(
-                "items",
-                "items__menu_item",
-            )
+            .select_related("restaurant")
+            .prefetch_related("items", "items__menu_item")
+            .order_by("-created_at")
         )
 
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+
+class CancelOrderView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, pk):
+        order = get_object_or_404(Order, pk=pk, user=request.user)
+
+        if order.status not in (
+            Order.Status.PENDING,
+            Order.Status.ACCEPTED,
+            Order.Status.PREPARING,
+            Order.Status.READY,
+        ):
+            raise ValidationError(
+                {"status": f"Cannot cancel order in status {order.status}."}
+            )
+
+        order.status = Order.Status.CANCELLED
+        try:
+            order.save()
+        except DjangoValidationError as e:
+            raise ValidationError(
+                e.message_dict if hasattr(e, "message_dict") else e.messages
+            )
+
+        return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
