@@ -1,5 +1,5 @@
 from django.contrib.auth.models import AbstractUser
-from django.db import models
+from django.contrib.gis.db import models
 
 
 class User(AbstractUser):
@@ -11,8 +11,7 @@ class User(AbstractUser):
 
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.CUSTOMER)
     phone = models.CharField(max_length=20, blank=True)
-    lat = models.FloatField(blank=True, null=True)
-    lng = models.FloatField(blank=True, null=True)
+    location = models.PointField(geography=True, blank=True, null=True)
     is_available = models.BooleanField(default=True)
     avg_rating = models.FloatField(default=0.0)
     rating_count = models.PositiveIntegerField(default=0)

@@ -1,6 +1,6 @@
 from rest_framework import serializers
+from config.fields import LocationField
 from .models import Restaurant, MenuItem
-
 
 
 class MenuItemSerializer(serializers.ModelSerializer):
@@ -24,6 +24,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
             "updated_at",
         )
 
+
 class MenuItemWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = MenuItem
@@ -34,17 +35,30 @@ class MenuItemWriteSerializer(serializers.ModelSerializer):
             "price",
             "image",
             "is_available",
-            "restaurant"
+            "restaurant",
         )
 
+
 class RestaurantSerializer(serializers.ModelSerializer):
+    location = LocationField(required=False)
+
     class Meta:
         model = Restaurant
-        fields = "__all__"
-        read_only_fields = ("owner",)
+        fields = (
+            "id",
+            "owner",
+            "name",
+            "address",
+            "location",
+            "image",
+            "status",
+            "created_at",
+        )
+        read_only_fields = ("owner", "created_at")
 
 
 class RestaurantDetailSerializer(serializers.ModelSerializer):
+    location = LocationField(required=False)
     menu_items = MenuItemSerializer(many=True, read_only=True)
 
     class Meta:
@@ -60,3 +74,4 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
             "created_at",
             "menu_items",
         )
+        read_only_fields = ("owner", "created_at")

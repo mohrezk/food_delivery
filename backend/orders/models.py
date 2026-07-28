@@ -1,4 +1,6 @@
-from django.db import models
+from django.contrib.gis.db import models
+from django.core.exceptions import ValidationError
+from django.db import transaction
 
 from accounts.models import User
 from restaurants.models import Restaurant, MenuItem
@@ -10,9 +12,12 @@ class Cart(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+
 class CartItem(models.Model):
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="items")
-    menu_item = models.ForeignKey(MenuItem, on_delete=models.CASCADE, related_name="cart_items")
+    menu_item = models.ForeignKey(
+        MenuItem, on_delete=models.CASCADE, related_name="cart_items"
+    )
 
     quantity = models.PositiveIntegerField(default=1)
 
@@ -21,9 +26,7 @@ class CartItem(models.Model):
         decimal_places=2,
     )
 
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         constraints = [
@@ -33,15 +36,28 @@ class CartItem(models.Model):
             )
         ]
 
-class Order(models.Model):
 
+class Order(models.Model):
     class Status(models.TextChoices):
         PENDING = "PENDING", "Pending"
         ACCEPTED = "ACCEPTED", "Accepted"
         PREPARING = "PREPARING", "Preparing"
-        OUT_FOR_DELIVERY = "OUT_FOR_DELIVERY", "Out For Delivery"
+        READY = "READY", "Ready"
+        PICKED_UP = "PICKED_UP", "Picked Up"
         DELIVERED = "DELIVERED", "Delivered"
         CANCELLED = "CANCELLED", "Cancelled"
+        EXPIRED = "EXPIRED", "Expired"
+
+    TRANSITIONS = {
+        Status.PENDING: {Status.ACCEPTED, Status.CANCELLED, Status.EXPIRED},
+        Status.ACCEPTED: {Status.PREPARING, Status.CANCELLED},
+        Status.PREPARING: {Status.READY, Status.CANCELLED},
+        Status.READY: {Status.PICKED_UP, Status.CANCELLED},
+        Status.PICKED_UP: {Status.DELIVERED, Status.CANCELLED},
+        Status.DELIVERED: set(),
+        Status.CANCELLED: set(),
+        Status.EXPIRED: set(),
+    }
 
     user = models.ForeignKey(
         User,
@@ -69,16 +85,66 @@ class Order(models.Model):
 
     delivery_address = models.TextField()
 
-    created_at = models.DateTimeField(
-        auto_now_add=True,
+    delivery_location = models.PointField(
+        geography=True,
+        blank=True,
+        null=True,
     )
 
-    updated_at = models.DateTimeField(
-        auto_now=True,
-    )
+    accepted_at = models.DateTimeField(blank=True, null=True)
+    preparing_at = models.DateTimeField(blank=True, null=True)
+    ready_at = models.DateTimeField(blank=True, null=True)
+    picked_up_at = models.DateTimeField(blank=True, null=True)
+    delivered_at = models.DateTimeField(blank=True, null=True)
+    cancelled_at = models.DateTimeField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        super().clean()
+        if self.pk:
+            old = Order.objects.get(pk=self.pk)
+            if old.status != self.status and self.status not in self.TRANSITIONS.get(
+                old.status, set()
+            ):
+                raise ValidationError(
+                    f"Cannot transition order from {old.status} to {self.status}."
+                )
+
+    def save(self, *args, **kwargs):
+        from django.utils import timezone
+
+        is_transition = False
+        if self.pk:
+            old = Order.objects.get(pk=self.pk)
+            is_transition = old.status != self.status
+            if is_transition and self.status not in self.TRANSITIONS.get(
+                old.status, set()
+            ):
+                raise ValidationError(
+                    f"Cannot transition order from {old.status} to {self.status}."
+                )
+
+            if is_transition and not getattr(self, "_skip_timestamp", False):
+                now = timezone.now()
+                if self.status == Order.Status.ACCEPTED and not self.accepted_at:
+                    self.accepted_at = now
+                elif self.status == Order.Status.PREPARING and not self.preparing_at:
+                    self.preparing_at = now
+                elif self.status == Order.Status.READY and not self.ready_at:
+                    self.ready_at = now
+                elif self.status == Order.Status.PICKED_UP and not self.picked_up_at:
+                    self.picked_up_at = now
+                elif self.status == Order.Status.DELIVERED and not self.delivered_at:
+                    self.delivered_at = now
+                elif self.status == Order.Status.CANCELLED and not self.cancelled_at:
+                    self.cancelled_at = now
+
+        super().save(*args, **kwargs)
+
 
 class OrderItem(models.Model):
-
     order = models.ForeignKey(
         Order,
         on_delete=models.CASCADE,
@@ -98,6 +164,4 @@ class OrderItem(models.Model):
         decimal_places=2,
     )
 
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-    )
+    created_at = models.DateTimeField(auto_now_add=True)

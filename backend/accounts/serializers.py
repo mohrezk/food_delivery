@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from config.fields import LocationField
 from .models import User
 
 
@@ -23,6 +24,8 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    location = LocationField(required=False)
+
     class Meta:
         model = User
         fields = (
@@ -31,8 +34,7 @@ class UserSerializer(serializers.ModelSerializer):
             "username",
             "phone",
             "role",
-            "lat",
-            "lng",
+            "location",
             "is_available",
             "avg_rating",
             "rating_count",

@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.contrib.gis.geos import Point
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
@@ -106,8 +107,7 @@ class Command(BaseCommand):
                 defaults={
                     "owner": vendor,
                     "address": rdata["address"],
-                    "lat": rdata["lat"],
-                    "lng": rdata["lng"],
+                    "location": Point(rdata["lng"], rdata["lat"], srid=4326),
                     "status": Restaurant.Status.OPEN,
                 },
             )

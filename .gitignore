@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .env
+backend/opencode.json
 .venv/
 venv/
 dist/
@@ -12,3 +13,5 @@ frontend/
 .DS_Store
 *.log
 project-plan.md
+steps/
+mangement/
