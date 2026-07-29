@@ -71,6 +71,15 @@ class Order(models.Model):
         related_name="orders",
     )
 
+    driver = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        related_name="deliveries",
+        blank=True,
+        null=True,
+        limit_choices_to={"role": User.Role.DRIVER},
+    )
+
     status = models.CharField(
         max_length=30,
         choices=Status.choices,

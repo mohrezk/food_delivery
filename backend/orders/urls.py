@@ -15,5 +15,31 @@ urlpatterns = [
         views.CancelOrderView.as_view(),
         name="order-cancel",
     ),
+    path("vendor/orders/", views.VendorOrderListView.as_view(), name="vendor-orders"),
+    path(
+        "vendor/orders/<int:pk>/status/",
+        views.VendorOrderStatusUpdateView.as_view(),
+        name="vendor-order-status",
+    ),
+    path(
+        "driver/orders/available/",
+        views.DriverAvailableOrdersView.as_view(),
+        name="driver-orders-available",
+    ),
+    path(
+        "driver/orders/<int:pk>/claim/",
+        views.DriverClaimOrderView.as_view(),
+        name="driver-order-claim",
+    ),
+    path(
+        "driver/orders/<int:pk>/picked-up/",
+        views.DriverPickedUpOrderView.as_view(),
+        name="driver-order-picked-up",
+    ),
+    path(
+        "driver/orders/<int:pk>/delivered/",
+        views.DriverDeliveredOrderView.as_view(),
+        name="driver-order-delivered",
+    ),
     path("", include(router.urls)),
 ]

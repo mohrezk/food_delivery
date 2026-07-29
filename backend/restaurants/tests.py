@@ -35,6 +35,13 @@ class RestaurantsTests(APITestCase):
             location=Point(-74.0060, 40.7128, srid=4326),
             status=Restaurant.Status.OPEN,
         )
+        self.second_restaurant = Restaurant.objects.create(
+            owner=self.vendor,
+            name="Pizza Place",
+            address="456 Oven Ave",
+            location=Point(-74.0070, 40.7130, srid=4326),
+            status=Restaurant.Status.OPEN,
+        )
         self.item = MenuItem.objects.create(
             restaurant=self.restaurant,
             name="Classic Burger",
@@ -160,3 +167,16 @@ class RestaurantsTests(APITestCase):
         )
 
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_owner_cannot_reassign_menu_item_to_another_restaurant(self):
+        self.client.force_authenticate(self.vendor)
+
+        res = self.client.patch(
+            reverse("item-detail", args=[self.item.id]),
+            {"restaurant": self.second_restaurant.id},
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.restaurant_id, self.restaurant.id)

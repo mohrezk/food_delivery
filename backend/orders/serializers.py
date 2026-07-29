@@ -71,6 +71,7 @@ class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     delivery_location = LocationField(required=False)
     customer = serializers.PrimaryKeyRelatedField(source="user", read_only=True)
+    driver = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = Order
@@ -79,6 +80,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "customer",
             "restaurant",
             "restaurant_name",
+            "driver",
             "status",
             "total_price",
             "delivery_address",
@@ -105,3 +107,13 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
+
+
+class VendorOrderStatusUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(
+        choices=(
+            Order.Status.ACCEPTED,
+            Order.Status.PREPARING,
+            Order.Status.READY,
+        )
+    )

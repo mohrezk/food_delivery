@@ -8,7 +8,9 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 
+from accounts.models import User
 from restaurants.models import MenuItem
 
 from .models import Cart, CartItem, Order, OrderItem
@@ -17,6 +19,7 @@ from .serializers import (
     CartSerializer,
     CheckoutSerializer,
     OrderSerializer,
+    VendorOrderStatusUpdateSerializer,
 )
 
 
@@ -108,6 +111,10 @@ class CheckoutView(APIView):
     permission_classes = (IsAuthenticated,)
 
     @transaction.atomic
+    @extend_schema(
+        request=CheckoutSerializer,
+        responses={201: OrderSerializer, 400: OpenApiResponse(description="Invalid checkout request")},
+    )
     def post(self, request):
         serializer = CheckoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -173,6 +180,10 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
 class CancelOrderView(APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        request=None,
+        responses={200: OrderSerializer, 400: OpenApiResponse(description="Order cannot be cancelled")},
+    )
     def post(self, request, pk):
         order = get_object_or_404(Order, pk=pk, user=request.user)
 
@@ -187,6 +198,134 @@ class CancelOrderView(APIView):
             )
 
         order.status = Order.Status.CANCELLED
+        try:
+            order.save()
+        except DjangoValidationError as e:
+            raise ValidationError(
+                e.message_dict if hasattr(e, "message_dict") else e.messages
+            )
+
+        return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
+
+
+class VendorOrderListView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(responses={200: OrderSerializer(many=True)})
+    def get(self, request):
+        if request.user.role != User.Role.VENDOR:
+            raise PermissionDenied("Only vendors can access this endpoint.")
+
+        orders = (
+            Order.objects.filter(restaurant__owner=request.user)
+            .select_related("restaurant", "user", "driver")
+            .prefetch_related("items", "items__menu_item")
+            .order_by("-created_at")
+        )
+        return Response(OrderSerializer(orders, many=True).data)
+
+
+class VendorOrderStatusUpdateView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        request=VendorOrderStatusUpdateSerializer,
+        responses={200: OrderSerializer, 400: OpenApiResponse(description="Invalid transition")},
+    )
+    def post(self, request, pk):
+        if request.user.role != User.Role.VENDOR:
+            raise PermissionDenied("Only vendors can update order status.")
+
+        order = get_object_or_404(Order, pk=pk, restaurant__owner=request.user)
+        serializer = VendorOrderStatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        order.status = serializer.validated_data["status"]
+        try:
+            order.save()
+        except DjangoValidationError as e:
+            raise ValidationError(
+                e.message_dict if hasattr(e, "message_dict") else e.messages
+            )
+
+        return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
+
+
+class DriverAvailableOrdersView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(responses={200: OrderSerializer(many=True)})
+    def get(self, request):
+        if request.user.role != User.Role.DRIVER:
+            raise PermissionDenied("Only drivers can access this endpoint.")
+
+        orders = (
+            Order.objects.filter(status=Order.Status.READY, driver__isnull=True)
+            .select_related("restaurant", "user")
+            .prefetch_related("items", "items__menu_item")
+            .order_by("-created_at")
+        )
+        return Response(OrderSerializer(orders, many=True).data)
+
+
+class DriverClaimOrderView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(request=None, responses={200: OrderSerializer})
+    def post(self, request, pk):
+        if request.user.role != User.Role.DRIVER:
+            raise PermissionDenied("Only drivers can claim orders.")
+
+        order = get_object_or_404(Order, pk=pk)
+
+        if order.status != Order.Status.READY:
+            raise ValidationError({"status": "Only READY orders can be claimed."})
+        if order.driver and order.driver != request.user:
+            raise ValidationError({"driver": "Order is already claimed by another driver."})
+
+        order.driver = request.user
+        order.save(update_fields=["driver", "updated_at"])
+        return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
+
+
+class DriverPickedUpOrderView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(request=None, responses={200: OrderSerializer})
+    def post(self, request, pk):
+        if request.user.role != User.Role.DRIVER:
+            raise PermissionDenied("Only drivers can pick up orders.")
+
+        order = get_object_or_404(Order, pk=pk, driver=request.user)
+
+        if order.status != Order.Status.READY:
+            raise ValidationError({"status": "Order must be READY before pickup."})
+
+        order.status = Order.Status.PICKED_UP
+        try:
+            order.save()
+        except DjangoValidationError as e:
+            raise ValidationError(
+                e.message_dict if hasattr(e, "message_dict") else e.messages
+            )
+
+        return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
+
+
+class DriverDeliveredOrderView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(request=None, responses={200: OrderSerializer})
+    def post(self, request, pk):
+        if request.user.role != User.Role.DRIVER:
+            raise PermissionDenied("Only drivers can deliver orders.")
+
+        order = get_object_or_404(Order, pk=pk, driver=request.user)
+
+        if order.status != Order.Status.PICKED_UP:
+            raise ValidationError({"status": "Order must be PICKED_UP before delivery."})
+
+        order.status = Order.Status.DELIVERED
         try:
             order.save()
         except DjangoValidationError as e:

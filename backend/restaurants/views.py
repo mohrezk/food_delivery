@@ -1,6 +1,7 @@
 from rest_framework import viewsets
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 
 from django.contrib.gis.db.models.functions import Distance
 from django.contrib.gis.geos import Point
@@ -82,6 +83,21 @@ class MenuItemViewSet(viewsets.ModelViewSet):
             return MenuItemWriteSerializer
 
         return MenuItemSerializer
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+
+        new_restaurant = serializer.validated_data.get("restaurant")
+        if new_restaurant and new_restaurant != instance.restaurant:
+            raise ValidationError(
+                {"restaurant": "Changing restaurant for an existing menu item is not allowed."}
+            )
+
+        self.perform_update(serializer)
+        return Response(serializer.data)
 
     def get_permissions(self):
         if self.action == "create":

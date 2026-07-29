@@ -28,6 +28,11 @@ class OrdersTests(APITestCase):
         self.other_customer = User.objects.create_user(
             **creds(User.Role.CUSTOMER, "other")
         )
+        self.other_vendor = User.objects.create_user(**creds(User.Role.VENDOR, "vendor2"))
+        self.driver = User.objects.create_user(**creds(User.Role.DRIVER, "driver1"))
+        self.other_driver = User.objects.create_user(
+            **creds(User.Role.DRIVER, "driver2")
+        )
         self.restaurant = Restaurant.objects.create(
             owner=self.vendor,
             name="Burger House",
@@ -227,3 +232,141 @@ class OrdersTests(APITestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.DELIVERED)
         self.assertIsNotNone(order.delivered_at)
+
+    def test_vendor_lists_only_own_restaurant_orders(self):
+        other_restaurant = Restaurant.objects.create(
+            owner=self.other_vendor,
+            name="Other Vendor Place",
+            address="789 Other St",
+            status=Restaurant.Status.OPEN,
+        )
+        own_order = Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="x",
+            status=Order.Status.PENDING,
+        )
+        Order.objects.create(
+            user=self.customer,
+            restaurant=other_restaurant,
+            delivery_address="y",
+            status=Order.Status.PENDING,
+        )
+
+        self.client.force_authenticate(self.vendor)
+        res = self.client.get(reverse("vendor-orders"))
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        ids = [o["id"] for o in res.data]
+        self.assertEqual(ids, [own_order.id])
+
+    def test_vendor_can_advance_order_status(self):
+        order = Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="x",
+            status=Order.Status.PENDING,
+        )
+
+        self.client.force_authenticate(self.vendor)
+        for nxt in (Order.Status.ACCEPTED, Order.Status.PREPARING, Order.Status.READY):
+            res = self.client.post(
+                reverse("vendor-order-status", args=[order.id]),
+                {"status": nxt},
+                format="json",
+            )
+            self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.READY)
+
+    def test_vendor_cannot_manage_other_vendor_order(self):
+        other_restaurant = Restaurant.objects.create(
+            owner=self.other_vendor,
+            name="Other Vendor Place",
+            address="789 Other St",
+            status=Restaurant.Status.OPEN,
+        )
+        order = Order.objects.create(
+            user=self.customer,
+            restaurant=other_restaurant,
+            delivery_address="x",
+            status=Order.Status.PENDING,
+        )
+
+        self.client.force_authenticate(self.vendor)
+        res = self.client.post(
+            reverse("vendor-order-status", args=[order.id]),
+            {"status": Order.Status.ACCEPTED},
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_driver_full_flow_claim_pickup_deliver(self):
+        order = Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="x",
+            status=Order.Status.READY,
+        )
+
+        self.client.force_authenticate(self.driver)
+
+        claim_res = self.client.post(reverse("driver-order-claim", args=[order.id]))
+        self.assertEqual(claim_res.status_code, status.HTTP_200_OK)
+
+        pickup_res = self.client.post(reverse("driver-order-picked-up", args=[order.id]))
+        self.assertEqual(pickup_res.status_code, status.HTTP_200_OK)
+
+        deliver_res = self.client.post(reverse("driver-order-delivered", args=[order.id]))
+        self.assertEqual(deliver_res.status_code, status.HTTP_200_OK)
+
+        order.refresh_from_db()
+        self.assertEqual(order.driver, self.driver)
+        self.assertEqual(order.status, Order.Status.DELIVERED)
+
+    def test_driver_available_orders_only_ready_unclaimed(self):
+        ready_unclaimed = Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="x",
+            status=Order.Status.READY,
+        )
+        Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="y",
+            status=Order.Status.PICKED_UP,
+            driver=self.driver,
+        )
+        Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="z",
+            status=Order.Status.READY,
+            driver=self.other_driver,
+        )
+
+        self.client.force_authenticate(self.driver)
+        res = self.client.get(reverse("driver-orders-available"))
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        ids = [o["id"] for o in res.data]
+        self.assertEqual(ids, [ready_unclaimed.id])
+
+    def test_other_driver_cannot_pickup_claimed_order(self):
+        order = Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="x",
+            status=Order.Status.READY,
+        )
+
+        self.client.force_authenticate(self.driver)
+        self.client.post(reverse("driver-order-claim", args=[order.id]))
+
+        self.client.force_authenticate(self.other_driver)
+        res = self.client.post(reverse("driver-order-picked-up", args=[order.id]))
+
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
