@@ -28,7 +28,7 @@ INSTALLED_APPS = [
     "accounts",
     "restaurants",
     "orders",
-    # "payments",
+    "payments",
     # "chat",
     # "delivery",
     # "notifications",

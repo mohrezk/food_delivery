@@ -13,6 +13,8 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema
 from accounts.models import User
 from restaurants.models import MenuItem
 
+from payments.services import get_payment_service
+
 from .models import Cart, CartItem, Order, OrderItem
 from .serializers import (
     CartItemSerializer,
@@ -158,6 +160,8 @@ class CheckoutView(APIView):
 
         order.total_price = total
         order.save(update_fields=["total_price"])
+
+        get_payment_service().create_payment(order)
 
         cart.items.all().delete()
 
