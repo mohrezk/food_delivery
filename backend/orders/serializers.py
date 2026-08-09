@@ -117,3 +117,8 @@ class VendorOrderStatusUpdateSerializer(serializers.Serializer):
             Order.Status.READY,
         )
     )
+
+
+class DriverLocationUpdateSerializer(serializers.Serializer):
+    location = LocationField()
+    is_available = serializers.BooleanField(required=False)

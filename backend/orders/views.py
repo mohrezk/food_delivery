@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 
 from accounts.models import User
+from accounts.serializers import UserSerializer
 from restaurants.models import MenuItem
 
 from payments.services import get_payment_service
@@ -20,6 +21,7 @@ from .serializers import (
     CartItemSerializer,
     CartSerializer,
     CheckoutSerializer,
+    DriverLocationUpdateSerializer,
     OrderSerializer,
     VendorOrderStatusUpdateSerializer,
 )
@@ -338,3 +340,26 @@ class DriverDeliveredOrderView(APIView):
             )
 
         return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
+
+
+class DriverLocationUpdateView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        request=DriverLocationUpdateSerializer,
+        responses={200: UserSerializer},
+    )
+    def patch(self, request):
+        if request.user.role != User.Role.DRIVER:
+            raise PermissionDenied("Only drivers can update their location.")
+
+        serializer = DriverLocationUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        data = serializer.validated_data
+        request.user.location = data["location"]
+        if "is_available" in data:
+            request.user.is_available = data["is_available"]
+        request.user.save(update_fields=["location", "is_available"])
+
+        return Response(UserSerializer(request.user).data, status=status.HTTP_200_OK)

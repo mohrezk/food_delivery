@@ -41,5 +41,10 @@ urlpatterns = [
         views.DriverDeliveredOrderView.as_view(),
         name="driver-order-delivered",
     ),
+    path(
+        "driver/location/",
+        views.DriverLocationUpdateView.as_view(),
+        name="driver-location",
+    ),
     path("", include(router.urls)),
 ]

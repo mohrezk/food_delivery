@@ -370,3 +370,55 @@ class OrdersTests(APITestCase):
         res = self.client.post(reverse("driver-order-picked-up", args=[order.id]))
 
         self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_driver_updates_location(self):
+        self.client.force_authenticate(self.driver)
+        res = self.client.patch(
+            reverse("driver-location"),
+            {"location": {"lat": 40.7135, "lng": -74.0080}},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.driver.refresh_from_db()
+        self.assertIsNotNone(self.driver.location)
+        self.assertEqual(self.driver.location.y, 40.7135)
+        self.assertEqual(self.driver.location.x, -74.0080)
+        self.assertEqual(res.data["location"], {"lat": 40.7135, "lng": -74.008})
+
+    def test_driver_updates_availability_with_location(self):
+        self.client.force_authenticate(self.driver)
+        res = self.client.patch(
+            reverse("driver-location"),
+            {"location": {"lat": 40.7135, "lng": -74.0080}, "is_available": False},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.driver.refresh_from_db()
+        self.assertFalse(self.driver.is_available)
+
+    def test_driver_location_requires_valid_coords(self):
+        self.client.force_authenticate(self.driver)
+        res = self.client.patch(
+            reverse("driver-location"),
+            {"location": {"lat": 999, "lng": -74.0080}},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_driver_location_forbidden_for_non_driver(self):
+        self.client.force_authenticate(self.vendor)
+        res = self.client.patch(
+            reverse("driver-location"),
+            {"location": {"lat": 40.7135, "lng": -74.0080}},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_driver_location_requires_auth(self):
+        self.client.logout()
+        res = self.client.patch(
+            reverse("driver-location"),
+            {"location": {"lat": 40.7135, "lng": -74.0080}},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
