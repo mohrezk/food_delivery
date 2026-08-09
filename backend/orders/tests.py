@@ -3,12 +3,14 @@ from decimal import Decimal
 from django.contrib.gis.geos import Point
 from django.core.exceptions import ValidationError
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from accounts.models import User
 from restaurants.models import MenuItem, Restaurant
 from .models import Cart, CartItem, Order, OrderItem
+from .tasks import refresh_stale_carts
 
 
 def creds(role, username=None):
@@ -422,3 +424,84 @@ class OrdersTests(APITestCase):
             format="json",
         )
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class RefreshStaleCartsTests(APITestCase):
+    def setUp(self):
+        self.customer = User.objects.create_user(**creds(User.Role.CUSTOMER, "cust"))
+        self.vendor = User.objects.create_user(**creds(User.Role.VENDOR))
+        self.restaurant = Restaurant.objects.create(
+            owner=self.vendor,
+            name="Burger House",
+            address="123 Grill St",
+            status=Restaurant.Status.OPEN,
+        )
+        self.item = MenuItem.objects.create(
+            restaurant=self.restaurant,
+            name="Classic Burger",
+            description="Beef patty",
+            price=Decimal("8.99"),
+        )
+
+    def _make_stale_cart(self, hours=25):
+        cart = Cart.objects.create(user=self.customer)
+        CartItem.objects.create(
+            cart=cart,
+            menu_item=self.item,
+            quantity=1,
+            price_snapshot=self.item.price,
+        )
+        Cart.objects.filter(pk=cart.pk).update(
+            updated_at=timezone.now() - timezone.timedelta(hours=hours)
+        )
+        return Cart.objects.get(pk=cart.pk)
+
+    def test_updates_price_snapshot_for_stale_cart(self):
+        self._make_stale_cart()
+        self.item.price = Decimal("9.49")
+        self.item.save()
+
+        result = refresh_stale_carts()
+
+        self.assertEqual(result["refreshed_carts"], 1)
+        item = CartItem.objects.get()
+        self.assertEqual(item.price_snapshot, Decimal("9.49"))
+
+    def test_removes_unavailable_item_for_stale_cart(self):
+        self._make_stale_cart()
+        self.item.is_available = False
+        self.item.save()
+
+        result = refresh_stale_carts()
+
+        self.assertEqual(result["refreshed_carts"], 1)
+        self.assertEqual(CartItem.objects.count(), 0)
+
+    def test_leaves_fresh_cart_untouched(self):
+        self._make_stale_cart(hours=1)
+        self.item.price = Decimal("9.49")
+        self.item.save()
+
+        result = refresh_stale_carts()
+
+        self.assertEqual(result["refreshed_carts"], 0)
+        item = CartItem.objects.get()
+        self.assertEqual(item.price_snapshot, Decimal("8.99"))
+
+    def test_keeps_unchanged_stale_cart_intact(self):
+        self._make_stale_cart()
+
+        result = refresh_stale_carts()
+
+        self.assertEqual(result["refreshed_carts"], 0)
+        self.assertEqual(CartItem.objects.count(), 1)
+        self.assertEqual(CartItem.objects.get().price_snapshot, Decimal("8.99"))
+
+    def test_resets_updated_at_after_refresh(self):
+        cart = self._make_stale_cart()
+        self.item.price = Decimal("9.49")
+        self.item.save()
+
+        refresh_stale_carts()
+        cart.refresh_from_db()
+        self.assertGreater(cart.updated_at, timezone.now() - timezone.timedelta(hours=1))

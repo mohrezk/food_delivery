@@ -82,6 +82,7 @@ class CartItemViewSet(viewsets.ModelViewSet):
             )
             created = True
 
+        cart.save(update_fields=["updated_at"])
         serializer = self.get_serializer(item)
         return Response(
             serializer.data,
@@ -103,11 +104,14 @@ class CartItemViewSet(viewsets.ModelViewSet):
         if "menu_item" in serializer.validated_data:
             instance.price_snapshot = serializer.validated_data["menu_item"].price
         instance.save()
+        instance.cart.save(update_fields=["updated_at"])
         return Response(self.get_serializer(instance).data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         instance.delete()
+        cart = instance.cart
+        cart.save(update_fields=["updated_at"])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
