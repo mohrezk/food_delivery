@@ -373,6 +373,72 @@ class OrdersTests(APITestCase):
 
         self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_driver_lists_only_own_assigned_orders(self):
+        own_order = Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="x",
+            status=Order.Status.PICKED_UP,
+            driver=self.driver,
+        )
+        Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="y",
+            status=Order.Status.READY,
+            driver=self.other_driver,
+        )
+        Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="z",
+            status=Order.Status.READY,
+        )
+
+        self.client.force_authenticate(self.driver)
+        res = self.client.get(reverse("driver-orders"))
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        ids = [o["id"] for o in res.data]
+        self.assertEqual(ids, [own_order.id])
+
+    def test_driver_can_fetch_own_order_detail(self):
+        order = Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="x",
+            status=Order.Status.PICKED_UP,
+            driver=self.driver,
+        )
+
+        self.client.force_authenticate(self.driver)
+        res = self.client.get(reverse("driver-order-detail", args=[order.id]))
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["id"], order.id)
+
+    def test_driver_cannot_fetch_other_driver_order_detail(self):
+        order = Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="x",
+            status=Order.Status.PICKED_UP,
+            driver=self.other_driver,
+        )
+
+        self.client.force_authenticate(self.driver)
+        res = self.client.get(reverse("driver-order-detail", args=[order.id]))
+
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_driver_orders_endpoints_forbidden_for_non_driver(self):
+        self.client.force_authenticate(self.customer)
+        res = self.client.get(reverse("driver-orders"))
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+        res = self.client.get(reverse("driver-order-detail", args=[1]))
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_driver_updates_location(self):
         self.client.force_authenticate(self.driver)
         res = self.client.patch(

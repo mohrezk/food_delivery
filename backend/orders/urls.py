@@ -22,6 +22,16 @@ urlpatterns = [
         name="vendor-order-status",
     ),
     path(
+        "driver/orders/",
+        views.DriverOrderListView.as_view(),
+        name="driver-orders",
+    ),
+    path(
+        "driver/orders/<int:pk>/",
+        views.DriverOrderDetailView.as_view(),
+        name="driver-order-detail",
+    ),
+    path(
         "driver/orders/available/",
         views.DriverAvailableOrdersView.as_view(),
         name="driver-orders-available",

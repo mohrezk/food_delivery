@@ -367,3 +367,32 @@ class DriverLocationUpdateView(APIView):
         request.user.save(update_fields=["location", "is_available"])
 
         return Response(UserSerializer(request.user).data, status=status.HTTP_200_OK)
+
+
+class DriverOrderListView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(responses={200: OrderSerializer(many=True)})
+    def get(self, request):
+        if request.user.role != User.Role.DRIVER:
+            raise PermissionDenied("Only drivers can access this endpoint.")
+
+        orders = (
+            Order.objects.filter(driver=request.user)
+            .select_related("restaurant", "user", "driver")
+            .prefetch_related("items", "items__menu_item")
+            .order_by("-created_at")
+        )
+        return Response(OrderSerializer(orders, many=True).data)
+
+
+class DriverOrderDetailView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(responses={200: OrderSerializer, 404: OpenApiResponse(description="Order not found")})
+    def get(self, request, pk):
+        if request.user.role != User.Role.DRIVER:
+            raise PermissionDenied("Only drivers can access this endpoint.")
+
+        order = get_object_or_404(Order, pk=pk, driver=request.user)
+        return Response(OrderSerializer(order).data)
