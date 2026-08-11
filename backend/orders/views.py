@@ -16,6 +16,12 @@ from restaurants.models import MenuItem
 
 from payments.services import get_payment_service
 
+from chat.services import get_or_create_conversation_for_order
+from notifications.tasks import (
+    notify_driver_assigned,
+    notify_order_status_change,
+)
+
 from .models import Cart, CartItem, Order, OrderItem
 from .serializers import (
     CartItemSerializer,
@@ -171,6 +177,8 @@ class CheckoutView(APIView):
 
         cart.items.all().delete()
 
+        notify_order_status_change.delay(order.id)
+
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 
@@ -215,6 +223,8 @@ class CancelOrderView(APIView):
                 e.message_dict if hasattr(e, "message_dict") else e.messages
             )
 
+        notify_order_status_change.delay(order.id)
+
         return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
 
 
@@ -258,6 +268,8 @@ class VendorOrderStatusUpdateView(APIView):
                 e.message_dict if hasattr(e, "message_dict") else e.messages
             )
 
+        notify_order_status_change.delay(order.id)
+
         return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
 
 
@@ -295,6 +307,10 @@ class DriverClaimOrderView(APIView):
 
         order.driver = request.user
         order.save(update_fields=["driver", "updated_at"])
+
+        get_or_create_conversation_for_order(order)
+        notify_driver_assigned.delay(order.id)
+
         return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
 
 
@@ -319,6 +335,8 @@ class DriverPickedUpOrderView(APIView):
                 e.message_dict if hasattr(e, "message_dict") else e.messages
             )
 
+        notify_order_status_change.delay(order.id)
+
         return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
 
 
@@ -342,6 +360,8 @@ class DriverDeliveredOrderView(APIView):
             raise ValidationError(
                 e.message_dict if hasattr(e, "message_dict") else e.messages
             )
+
+        notify_order_status_change.delay(order.id)
 
         return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
 

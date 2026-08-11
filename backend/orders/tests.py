@@ -5,9 +5,9 @@ from django.core.exceptions import ValidationError
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APITestCase
 
 from accounts.models import User
+from config.tests_base import EagerCeleryTestCase
 from restaurants.models import MenuItem, Restaurant
 from .models import Cart, CartItem, Order, OrderItem
 from .tasks import refresh_stale_carts
@@ -23,7 +23,7 @@ def creds(role, username=None):
     }
 
 
-class OrdersTests(APITestCase):
+class OrdersTests(EagerCeleryTestCase):
     def setUp(self):
         self.customer = User.objects.create_user(**creds(User.Role.CUSTOMER, "cust"))
         self.vendor = User.objects.create_user(**creds(User.Role.VENDOR))
@@ -492,7 +492,7 @@ class OrdersTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
-class RefreshStaleCartsTests(APITestCase):
+class RefreshStaleCartsTests(EagerCeleryTestCase):
     def setUp(self):
         self.customer = User.objects.create_user(**creds(User.Role.CUSTOMER, "cust"))
         self.vendor = User.objects.create_user(**creds(User.Role.VENDOR))

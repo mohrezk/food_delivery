@@ -3,9 +3,9 @@ from unittest.mock import patch
 
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
 
 from accounts.models import User
+from config.tests_base import EagerCeleryTestCase
 from payments.models import Payment
 from payments.services import MockPaymentService
 from restaurants.models import MenuItem, Restaurant
@@ -22,7 +22,7 @@ def creds(role, username=None):
     }
 
 
-class PaymentsTests(APITestCase):
+class PaymentsTests(EagerCeleryTestCase):
     def setUp(self):
         self.customer = User.objects.create_user(**creds(User.Role.CUSTOMER, "cust"))
         self.vendor = User.objects.create_user(**creds(User.Role.VENDOR))
@@ -98,7 +98,7 @@ class PaymentsTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
-class MockPaymentServiceTests(APITestCase):
+class MockPaymentServiceTests(EagerCeleryTestCase):
     def setUp(self):
         self.customer = User.objects.create_user(**creds(User.Role.CUSTOMER, "cust"))
         self.vendor = User.objects.create_user(**creds(User.Role.VENDOR))
