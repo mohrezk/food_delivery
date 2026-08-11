@@ -29,9 +29,9 @@ INSTALLED_APPS = [
     "restaurants",
     "orders",
     "payments",
-    # "chat",
+    "chat",
     # "delivery",
-    # "notifications",
+    "notifications",
 ]
 
 MIDDLEWARE = [
