@@ -17,6 +17,7 @@ from restaurants.models import MenuItem
 from payments.services import get_payment_service
 
 from chat.services import get_or_create_conversation_for_order
+from config.events import publish_group
 from notifications.tasks import (
     notify_driver_assigned,
     notify_order_status_change,
@@ -31,6 +32,13 @@ from .serializers import (
     OrderSerializer,
     VendorOrderStatusUpdateSerializer,
 )
+
+
+def publish_order_status(order):
+    publish_group(
+        f"order_{order.id}",
+        {"type": "order.status", "order": OrderSerializer(order).data},
+    )
 
 
 class CartView(APIView):
@@ -178,6 +186,11 @@ class CheckoutView(APIView):
         cart.items.all().delete()
 
         notify_order_status_change.delay(order.id)
+        publish_order_status(order)
+        publish_group(
+            f"vendor_{order.restaurant.owner_id}",
+            {"type": "order.new", "order": OrderSerializer(order).data},
+        )
 
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
@@ -224,6 +237,7 @@ class CancelOrderView(APIView):
             )
 
         notify_order_status_change.delay(order.id)
+        publish_order_status(order)
 
         return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
 
@@ -269,6 +283,7 @@ class VendorOrderStatusUpdateView(APIView):
             )
 
         notify_order_status_change.delay(order.id)
+        publish_order_status(order)
 
         return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
 
@@ -310,6 +325,7 @@ class DriverClaimOrderView(APIView):
 
         get_or_create_conversation_for_order(order)
         notify_driver_assigned.delay(order.id)
+        publish_order_status(order)
 
         return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
 
@@ -336,6 +352,7 @@ class DriverPickedUpOrderView(APIView):
             )
 
         notify_order_status_change.delay(order.id)
+        publish_order_status(order)
 
         return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
 
@@ -362,6 +379,7 @@ class DriverDeliveredOrderView(APIView):
             )
 
         notify_order_status_change.delay(order.id)
+        publish_order_status(order)
 
         return Response(OrderSerializer(order).data, status=status.HTTP_200_OK)
 
@@ -385,6 +403,21 @@ class DriverLocationUpdateView(APIView):
         if "is_available" in data:
             request.user.is_available = data["is_available"]
         request.user.save(update_fields=["location", "is_available"])
+
+        location = data["location"]
+        active_orders = Order.objects.filter(
+            driver=request.user,
+            status__in=[Order.Status.READY, Order.Status.PICKED_UP],
+        )
+        for order in active_orders:
+            publish_group(
+                f"order_{order.id}",
+                {
+                    "type": "order.location",
+                    "order_id": order.id,
+                    "location": {"lat": location.y, "lng": location.x},
+                },
+            )
 
         return Response(UserSerializer(request.user).data, status=status.HTTP_200_OK)
 

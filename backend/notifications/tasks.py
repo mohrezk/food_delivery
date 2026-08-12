@@ -1,8 +1,32 @@
 from celery import shared_task
 
+from config.events import publish_group
 from orders.models import Order
 
 from .models import Notification
+
+
+def _broadcast_notifications(notifications):
+    for notification in notifications:
+        publish_group(
+            f"user_{notification.user_id}",
+            {
+                "type": "notification.created",
+                "notification": {
+                    "id": notification.id,
+                    "type": notification.type,
+                    "title": notification.title,
+                    "message": notification.message,
+                    "order_id": notification.order_id,
+                    "is_read": notification.is_read,
+                    "created_at": (
+                        notification.created_at.isoformat()
+                        if notification.created_at
+                        else None
+                    ),
+                },
+            },
+        )
 
 
 @shared_task
@@ -97,6 +121,7 @@ def notify_order_status_change(order_id):
 
     if notifications:
         Notification.objects.bulk_create(notifications)
+        _broadcast_notifications(notifications)
 
     return {"notified": len(notifications)}
 
@@ -128,6 +153,7 @@ def notify_driver_assigned(order_id):
 
     if notifications:
         Notification.objects.bulk_create(notifications)
+        _broadcast_notifications(notifications)
 
     return {"notified": len(notifications)}
 
@@ -160,5 +186,6 @@ def notify_new_chat_message(message_id):
 
     if notifications:
         Notification.objects.bulk_create(notifications)
+        _broadcast_notifications(notifications)
 
     return {"notified": len(notifications)}

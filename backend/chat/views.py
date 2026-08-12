@@ -7,6 +7,8 @@ from rest_framework.views import APIView
 
 from notifications.tasks import notify_new_chat_message
 
+from config.events import publish_group
+
 from .models import Conversation, Message
 from .serializers import (
     ConversationDetailSerializer,
@@ -77,6 +79,10 @@ class SendMessageView(APIView):
             updated_at=message.created_at
         )
         notify_new_chat_message.delay(message.pk)
+        publish_group(
+            f"chat_{conversation.pk}",
+            {"type": "message.created", "message": MessageSerializer(message).data},
+        )
 
         return Response(MessageSerializer(message).data, status=status.HTTP_201_CREATED)
 
