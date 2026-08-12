@@ -46,7 +46,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
             "updated_at",
         )
 
-    def get_last_message(self, obj):
+    def get_last_message(self, obj) -> dict | None:
         message = obj.messages.select_related("sender").order_by("-created_at").first()
         if message is None:
             return None
@@ -58,7 +58,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
             "created_at": message.created_at,
         }
 
-    def get_unread_count(self, obj):
+    def get_unread_count(self, obj) -> int:
         user = self.context["request"].user
         return obj.messages.filter(is_read=False).exclude(sender=user).count()
 

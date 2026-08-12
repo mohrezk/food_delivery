@@ -1,7 +1,18 @@
 from django.contrib.gis.geos import Point
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 
+@extend_schema_field(
+    {
+        "type": "object",
+        "properties": {
+            "lat": {"type": "number"},
+            "lng": {"type": "number"},
+        },
+        "required": ["lat", "lng"],
+    }
+)
 class LocationField(serializers.Field):
     """Accepts {"lat": float, "lng": float} and outputs same JSON.
 

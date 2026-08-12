@@ -42,6 +42,7 @@ def publish_order_status(order):
 
 
 class CartView(APIView):
+    serializer_class = CartSerializer
     permission_classes = (IsAuthenticated,)
 
     def _get_or_create_cart(self):
@@ -56,6 +57,7 @@ class CartView(APIView):
 
 class CartItemViewSet(viewsets.ModelViewSet):
     serializer_class = CartItemSerializer
+    queryset = CartItem.objects.all()
     permission_classes = (IsAuthenticated,)
 
     def get_queryset(self):
@@ -197,6 +199,7 @@ class CheckoutView(APIView):
 
 class OrderViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = OrderSerializer
+    queryset = Order.objects.all()
     permission_classes = (IsAuthenticated,)
 
     def get_queryset(self):

@@ -37,7 +37,7 @@ class CartSerializer(serializers.ModelSerializer):
         fields = ("id", "items", "total", "created_at", "updated_at")
         read_only_fields = ("created_at", "updated_at")
 
-    def get_total(self, obj):
+    def get_total(self, obj) -> Decimal:
         return sum(
             (item.price_snapshot * item.quantity for item in obj.items.all()),
             Decimal(0),
