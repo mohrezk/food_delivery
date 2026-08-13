@@ -2,6 +2,8 @@ from rest_framework import serializers
 
 from accounts.models import User
 
+from orders.utils import order_display_code
+
 from .models import Conversation, Message
 
 
@@ -29,6 +31,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
     order_id = serializers.IntegerField(read_only=True)
+    order_number = serializers.SerializerMethodField()
     restaurant_name = serializers.CharField(
         source="order.restaurant.name", read_only=True
     )
@@ -38,6 +41,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "order_id",
+            "order_number",
             "restaurant_name",
             "participants",
             "last_message",
@@ -61,6 +65,9 @@ class ConversationListSerializer(serializers.ModelSerializer):
     def get_unread_count(self, obj) -> int:
         user = self.context["request"].user
         return obj.messages.filter(is_read=False).exclude(sender=user).count()
+
+    def get_order_number(self, obj) -> str:
+        return order_display_code(obj.order)
 
 
 class ConversationDetailSerializer(ConversationListSerializer):

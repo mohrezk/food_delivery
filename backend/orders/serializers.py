@@ -6,6 +6,7 @@ from config.fields import LocationField
 from restaurants.models import Restaurant
 
 from .models import Cart, CartItem, Order, OrderItem
+from .utils import order_display_code
 
 
 class CartItemSerializer(serializers.ModelSerializer):
@@ -72,11 +73,13 @@ class OrderSerializer(serializers.ModelSerializer):
     delivery_location = LocationField(required=False)
     customer = serializers.PrimaryKeyRelatedField(source="user", read_only=True)
     driver = serializers.PrimaryKeyRelatedField(read_only=True)
+    order_number = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
         fields = (
             "id",
+            "order_number",
             "customer",
             "restaurant",
             "restaurant_name",
@@ -107,6 +110,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
+
+    def get_order_number(self, obj) -> str:
+        return order_display_code(obj)
 
 
 class VendorOrderStatusUpdateSerializer(serializers.Serializer):

@@ -171,6 +171,38 @@ class OrdersTests(EagerCeleryTestCase):
         res = self.client.post(reverse("order-cancel", args=[order.id]))
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_cancel_accepted_order_rejected(self):
+        order = Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="x",
+            status=Order.Status.ACCEPTED,
+        )
+        res = self.client.post(reverse("order-cancel", args=[order.id]))
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
+
+    def test_order_number_derived_and_stable(self):
+        self._add_to_cart(self.item1.id, 1)
+        res = self._checkout()
+        order_id = res.data["id"]
+        first = res.data["order_number"]
+        self.assertTrue(first.startswith("FD-"))
+        self.assertEqual(len(first), 11)
+
+        second = self.client.get(reverse("order-detail", args=[order_id]))
+        self.assertEqual(second.data["order_number"], first)
+
+        other = Order.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant,
+            delivery_address="x",
+            status=Order.Status.PENDING,
+        )
+        detail = self.client.get(reverse("order-detail", args=[other.id]))
+        self.assertNotEqual(detail.data["order_number"], first)
+
     def test_cancel_other_users_order_not_found(self):
         order = Order.objects.create(
             user=self.other_customer,
