@@ -2,6 +2,7 @@ from celery import shared_task
 
 from config.events import publish_group
 from orders.models import Order
+from orders.utils import order_display_code
 
 from .models import Notification
 
@@ -60,7 +61,7 @@ def notify_order_status_change(order_id):
         add(
             order.restaurant.owner,
             "New order",
-            f"New order #{order.id} at {restaurant_name} has been placed.",
+            f"New order #{order_display_code(order)} at {restaurant_name} has been placed.",
         )
     elif order.status == Order.Status.ACCEPTED:
         add(
@@ -83,7 +84,7 @@ def notify_order_status_change(order_id):
         add(
             order.driver,
             "Order ready for pickup",
-            f"Order #{order.id} at {restaurant_name} is ready for pickup.",
+            f"Order #{order_display_code(order)} at {restaurant_name} is ready for pickup.",
         )
     elif order.status == Order.Status.PICKED_UP:
         add(
@@ -94,7 +95,7 @@ def notify_order_status_change(order_id):
         add(
             order.restaurant.owner,
             "Order picked up",
-            f"Order #{order.id} has been picked up by the driver.",
+            f"Order #{order_display_code(order)} has been picked up by the driver.",
         )
     elif order.status == Order.Status.DELIVERED:
         add(
@@ -105,18 +106,18 @@ def notify_order_status_change(order_id):
         add(
             order.restaurant.owner,
             "Order delivered",
-            f"Order #{order.id} has been delivered.",
+            f"Order #{order_display_code(order)} has been delivered.",
         )
     elif order.status == Order.Status.CANCELLED:
         add(
             order.restaurant.owner,
             "Order cancelled",
-            f"Order #{order.id} was cancelled by the customer.",
+            f"Order #{order_display_code(order)} was cancelled by the customer.",
         )
         add(
             order.driver,
             "Order cancelled",
-            f"Order #{order.id} assigned to you was cancelled.",
+            f"Order #{order_display_code(order)} assigned to you was cancelled.",
         )
 
     if notifications:
@@ -144,7 +145,7 @@ def notify_driver_assigned(order_id):
             user=recipient,
             type=Notification.Type.ORDER,
             title="Driver assigned",
-            message=f"A driver has been assigned to order #{order.id}.",
+            message=f"A driver has been assigned to order #{order_display_code(order)}.",
             order=order,
         )
         for recipient in (order.user, order.restaurant.owner)
@@ -178,7 +179,7 @@ def notify_new_chat_message(message_id):
             user=recipient,
             type=Notification.Type.CHAT,
             title=f"New message from {message.sender.username}",
-            message=f"Order #{conversation.order_id}: {message.body[:140]}",
+            message=f"Order #{order_display_code(conversation.order)}: {message.body[:140]}",
             order=conversation.order,
         )
         for recipient in recipients

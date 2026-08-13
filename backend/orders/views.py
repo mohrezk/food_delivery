@@ -221,12 +221,7 @@ class CancelOrderView(APIView):
     def post(self, request, pk):
         order = get_object_or_404(Order, pk=pk, user=request.user)
 
-        if order.status not in (
-            Order.Status.PENDING,
-            Order.Status.ACCEPTED,
-            Order.Status.PREPARING,
-            Order.Status.READY,
-        ):
+        if order.status != Order.Status.PENDING:
             raise ValidationError(
                 {"status": f"Cannot cancel order in status {order.status}."}
             )

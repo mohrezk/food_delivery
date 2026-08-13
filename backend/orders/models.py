@@ -50,10 +50,10 @@ class Order(models.Model):
 
     TRANSITIONS = {
         Status.PENDING: {Status.ACCEPTED, Status.CANCELLED, Status.EXPIRED},
-        Status.ACCEPTED: {Status.PREPARING, Status.CANCELLED},
-        Status.PREPARING: {Status.READY, Status.CANCELLED},
-        Status.READY: {Status.PICKED_UP, Status.CANCELLED},
-        Status.PICKED_UP: {Status.DELIVERED, Status.CANCELLED},
+        Status.ACCEPTED: {Status.PREPARING},
+        Status.PREPARING: {Status.READY},
+        Status.READY: {Status.PICKED_UP},
+        Status.PICKED_UP: {Status.DELIVERED},
         Status.DELIVERED: set(),
         Status.CANCELLED: set(),
         Status.EXPIRED: set(),
